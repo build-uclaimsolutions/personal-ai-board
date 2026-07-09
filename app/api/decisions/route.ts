@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabase, isMockMode } from "@/lib/supabase";
 import { analyzeDecision } from "@/lib/claude";
+
+const mockDecisions: Record<string, any[]> = {};
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,17 +16,24 @@ export async function POST(request: NextRequest) {
     }
 
     const analysis = await analyzeDecision(description);
+    const id = Math.random().toString(36).substr(2, 9);
+    const decision = {
+      id,
+      user_id: userId,
+      description,
+      analysis,
+      created_at: new Date().toISOString(),
+    };
 
-    const { data, error } = await supabase
+    if (isMockMode) {
+      if (!mockDecisions[userId]) mockDecisions[userId] = [];
+      mockDecisions[userId].push(decision);
+      return NextResponse.json(decision, { status: 201 });
+    }
+
+    const { data, error } = await supabase!
       .from("decisions")
-      .insert([
-        {
-          user_id: userId,
-          description,
-          analysis,
-          created_at: new Date().toISOString(),
-        },
-      ])
+      .insert([decision])
       .select()
       .single();
 
@@ -52,7 +61,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { data, error } = await supabase
+    if (isMockMode) {
+      return NextResponse.json(mockDecisions[userId] || []);
+    }
+
+    const { data, error } = await supabase!
       .from("decisions")
       .select("*")
       .eq("user_id", userId)
